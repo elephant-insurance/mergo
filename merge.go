@@ -11,6 +11,7 @@ package mergo
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 func hasMergeableFields(dst reflect.Value) (exported bool) {
@@ -90,8 +91,12 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, co
 	case reflect.Struct:
 		if hasMergeableFields(dst) {
 			for i, n := 0, dst.NumField(); i < n; i++ {
-				if err = deepMerge(dst.Field(i), src.Field(i), visited, depth+1, config); err != nil {
-					return
+				df := dst.Type().Field(i)
+				dfi := parseField(df)
+				if !dfi.final {
+					if err = deepMerge(dst.Field(i), src.Field(i), visited, depth+1, config); err != nil {
+						return
+					}
 				}
 			}
 		} else {
@@ -372,4 +377,49 @@ func isReflectNil(v reflect.Value) bool {
 	default:
 		return false
 	}
+}
+
+const (
+	FieldTagName         string = `config`
+	FieldTagOptional     string = `optional`
+	FieldTagFinal        string = `final`
+	FieldTagMustOverride string = `mustoverride`
+)
+
+// parseField inspects the metadata for a struct field and returns relevant values
+// In particular, this is where struct tags are handled
+func parseField(f reflect.StructField) fieldInfo {
+	rtn := fieldInfo{
+		name: f.Name,
+		typ:  f.Type,
+		kind: f.Type.Kind(),
+	}
+
+	switch rtn.kind {
+	case reflect.Struct, reflect.Map, reflect.Array, reflect.Slice:
+		rtn.complex = true
+	default:
+		rtn.complex = false
+	}
+
+	if v, ok := f.Tag.Lookup(FieldTagName); ok {
+		rtn.tags = strings.Split(v, ",")
+		rtn.optional = strings.Contains(v, FieldTagOptional)
+		rtn.final = strings.Contains(v, FieldTagFinal)
+		rtn.mustoverride = strings.Contains(v, FieldTagMustOverride)
+	}
+
+	return rtn
+}
+
+type fieldInfo struct {
+	name         string
+	tags         []string
+	typ          reflect.Type
+	kind         reflect.Kind
+	optional     bool
+	token        string
+	final        bool
+	complex      bool
+	mustoverride bool
 }
