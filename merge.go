@@ -10,7 +10,9 @@ package mergo
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -87,15 +89,40 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, co
 		}
 	}
 
+	var covr Overridable
+	var ok bool
+
+	ovrtype := reflect.TypeOf((*Overridable)(nil)).Elem()
+	overridable := dst.Type().Implements(ovrtype)
+
+	// spew.Dump(fmt.Sprintf("Type %v implements overridable: %v", dst.Type().Name(), overridable))
+	if overridable {
+		covr, ok = dst.Interface().(Overridable)
+		if !ok {
+			overridable = false
+			// spew.Dump(fmt.Sprintf("Error casting %v to overridable type", dst.Type().Name()))
+		}
+	}
 	switch dst.Kind() {
 	case reflect.Struct:
 		if hasMergeableFields(dst) {
 			for i, n := 0, dst.NumField(); i < n; i++ {
 				df := dst.Type().Field(i)
+				di := dst.Field(i)
 				dfi := parseField(df)
+				overridden := false
 				if !dfi.final {
-					if err = deepMerge(dst.Field(i), src.Field(i), visited, depth+1, config); err != nil {
-						return
+					if overridable && !dfi.complex {
+						// spew.Dump("BEFORE", di.Interface())
+						overridden = valueFromEnvironment(di, covr.GetEnvironmentSetting(df.Name))
+						// spew.Dump("AFTER", di.Interface())
+						// spew.Dump("environment variable for value %v: %v", dst.Type().Name(), covr.GetEnvironmentSetting(df.Name))
+					}
+					// TODO: PREVENT THIS IF WE GET THE VALUE FROM THE ENVIRONMENT:
+					if !overridden {
+						if err = deepMerge(dst.Field(i), src.Field(i), visited, depth+1, config); err != nil {
+							return
+						}
 					}
 				}
 			}
@@ -422,4 +449,120 @@ type fieldInfo struct {
 	final        bool
 	complex      bool
 	mustoverride bool
+}
+
+// valueFromEnvironment checks the submitted environment variable for a value
+// if a value is found, the submitted value is overwritten with the value of the environment variable
+// this only works for certain scalar types: string, int, bool, and float64
+// returns true if and only if the value is overwritten
+func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
+	// zero value
+	// var z reflect.Value
+	fieldType := fieldValue.Type()
+
+	switch fieldType.Kind() {
+	case reflect.Ptr:
+		pointedToType := fieldType.Elem().Kind()
+
+		switch pointedToType {
+		case reflect.Bool:
+			if envVal := getEnvironmentBool(envVarName); envVal != nil {
+				fieldValue.Elem().SetBool(*envVal)
+				return true
+				//return reflect.ValueOf(envVal)
+			}
+		case reflect.Int:
+			if envVal := getEnvironmentInt(envVarName); envVal != nil {
+				fieldValue.Elem().SetInt(int64(*envVal))
+				return true
+				//return reflect.ValueOf(envVal)
+			}
+		case reflect.Float64:
+			if envVal := getEnvironmentFloat64(envVarName); envVal != nil {
+				fieldValue.Elem().SetFloat(*envVal)
+				return true
+				//return reflect.ValueOf(envVal)
+			}
+		case reflect.String:
+			if envVal := getEnvironmentString(envVarName); envVal != nil {
+				fieldValue.Elem().SetString(*envVal)
+				return true
+				//return reflect.ValueOf(envVal)
+			}
+		default:
+			// not a type we can work with
+			// TODO: log an error
+			//return z
+			return false
+		} // END pointer target kind switch
+
+	case reflect.Bool:
+		if envVal := getEnvironmentBool(envVarName); envVal != nil {
+			fieldValue.SetBool(*envVal)
+			return true
+			//return reflect.ValueOf(*envVal)
+		}
+	case reflect.Int:
+		if envVal := getEnvironmentInt(envVarName); envVal != nil {
+			fieldValue.SetInt(int64(*envVal))
+			return true
+			//return reflect.ValueOf(*envVal)
+		}
+	case reflect.Float64:
+		if envVal := getEnvironmentFloat64(envVarName); envVal != nil {
+			fieldValue.SetFloat(*envVal)
+			return true
+			//return reflect.ValueOf(*envVal)
+		}
+	case reflect.String:
+		if envVal := getEnvironmentString(envVarName); envVal != nil {
+			fieldValue.SetString(*envVal)
+			return true
+			//return reflect.ValueOf(*envVal)
+		}
+	default:
+		// not a type we can override with environment variables
+		// TODO: log an error
+		return false
+	} // END field kind switch
+	return false
+}
+
+func getEnvironmentString(vn string) *string {
+	var rtn *string
+	if value := os.Getenv(vn); value != "" {
+		rtn = &value
+	}
+
+	return rtn
+}
+
+func getEnvironmentInt(vn string) *int {
+	var rtn *int
+	if strvalue := os.Getenv(vn); strvalue != "" {
+		if value, err := strconv.Atoi(strvalue); err == nil {
+			rtn = &value
+		}
+	}
+	return rtn
+}
+
+func getEnvironmentBool(vn string) *bool {
+	var rtn *bool
+	if strvalue := os.Getenv(vn); strvalue != "" {
+		if value, err := strconv.ParseBool(strvalue); err == nil {
+			rtn = &value
+		}
+	}
+	return rtn
+}
+
+func getEnvironmentFloat64(vn string) *float64 {
+	var rtn *float64
+	if strvalue := os.Getenv(vn); strvalue != "" {
+		if value, err := strconv.ParseFloat(strvalue, 64); err == nil {
+			rtn = &value
+		}
+	}
+	return rtn
 }
