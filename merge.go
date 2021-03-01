@@ -16,6 +16,8 @@ import (
 	"strings"
 )
 
+const DefaultEnvironmentSettingPrefix string = `MSVC_`
+
 var StructFieldDict = map[reflect.Type]map[string]FieldInfo{}
 
 func hasMergeableFields(dst reflect.Value) (exported bool) {
@@ -127,6 +129,9 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, co
 						overridden = valueFromEnvironment(di, covr.GetEnvironmentSetting(df.Name))
 						// spew.Dump("AFTER", di.Interface())
 						// spew.Dump("environment variable for value %v: %v", dst.Type().Name(), covr.GetEnvironmentSetting(df.Name))
+					} else if !dfi.Complex {
+						// Handle the case where the struct does not have an overridable method but is still overridden with the default prefix
+						overridden = valueFromEnvironment(di, DefaultEnvironmentSettingPrefix+df.Name)
 					}
 					// TODO: PREVENT THIS IF WE GET THE VALUE FROM THE ENVIRONMENT:
 					if !overridden {
