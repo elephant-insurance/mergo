@@ -16,6 +16,8 @@ import (
 	"strings"
 )
 
+var StructFieldDict = map[reflect.Type]map[string]FieldInfo{}
+
 func hasMergeableFields(dst reflect.Value) (exported bool) {
 	for i, n := 0, dst.NumField(); i < n; i++ {
 		field := dst.Type().Field(i)
@@ -93,7 +95,8 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, co
 	var ok bool
 
 	ovrtype := reflect.TypeOf((*Overridable)(nil)).Elem()
-	overridable := dst.Type().Implements(ovrtype)
+	// spew.Dump("DST: ", dst.IsValid(), "TYPE: ", dst.Type().IsValid())
+	overridable := dst.IsValid() && !dst.IsZero() && dst.Type().Implements(ovrtype)
 
 	// spew.Dump(fmt.Sprintf("Type %v implements overridable: %v", dst.Type().Name(), overridable))
 	if overridable {
@@ -105,14 +108,21 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, co
 	}
 	switch dst.Kind() {
 	case reflect.Struct:
+		baseType := dst.Type()
+		if _, ok := StructFieldDict[baseType]; !ok {
+			StructFieldDict[baseType] = map[string]FieldInfo{}
+		}
+
 		if hasMergeableFields(dst) {
 			for i, n := 0, dst.NumField(); i < n; i++ {
 				df := dst.Type().Field(i)
 				di := dst.Field(i)
 				dfi := parseField(df)
+				StructFieldDict[baseType][dfi.Name] = dfi
+
 				overridden := false
-				if !dfi.final {
-					if overridable && !dfi.complex {
+				if !dfi.Final {
+					if overridable && !dfi.Complex {
 						// spew.Dump("BEFORE", di.Interface())
 						overridden = valueFromEnvironment(di, covr.GetEnvironmentSetting(df.Name))
 						// spew.Dump("AFTER", di.Interface())
@@ -415,46 +425,50 @@ const (
 
 // parseField inspects the metadata for a struct field and returns relevant values
 // In particular, this is where struct tags are handled
-func parseField(f reflect.StructField) fieldInfo {
-	rtn := fieldInfo{
-		name: f.Name,
-		typ:  f.Type,
-		kind: f.Type.Kind(),
+func parseField(f reflect.StructField) FieldInfo {
+	rtn := FieldInfo{
+		Name: f.Name,
+		Typ:  f.Type,
+		Kind: f.Type.Kind(),
 	}
 
-	switch rtn.kind {
+	switch rtn.Kind {
 	case reflect.Struct, reflect.Map, reflect.Array, reflect.Slice:
-		rtn.complex = true
+		rtn.Complex = true
 	default:
-		rtn.complex = false
+		rtn.Complex = false
 	}
 
 	if v, ok := f.Tag.Lookup(FieldTagName); ok {
-		rtn.tags = strings.Split(v, ",")
-		rtn.optional = strings.Contains(v, FieldTagOptional)
-		rtn.final = strings.Contains(v, FieldTagFinal)
-		rtn.mustoverride = strings.Contains(v, FieldTagMustOverride)
+		rtn.Tags = strings.Split(v, ",")
+		rtn.Optional = strings.Contains(v, FieldTagOptional)
+		rtn.Final = strings.Contains(v, FieldTagFinal)
+		rtn.Mustoverride = strings.Contains(v, FieldTagMustOverride)
 	}
 
 	return rtn
 }
 
-type fieldInfo struct {
-	name         string
-	tags         []string
-	typ          reflect.Type
-	kind         reflect.Kind
-	optional     bool
-	token        string
-	final        bool
-	complex      bool
-	mustoverride bool
+type FieldInfo struct {
+	Name         string
+	Tags         []string
+	Typ          reflect.Type
+	Kind         reflect.Kind
+	Optional     bool
+	Token        string
+	Final        bool
+	Complex      bool
+	Mustoverride bool
 }
 
-// valueFromEnvironment checks the submitted environment variable for a value
+// valueFromEnvironment checks the submitted environment variable name for a value
 // if a value is found, the submitted value is overwritten with the value of the environment variable
 // this only works for certain scalar types: string, int, bool, and float64
 // returns true if and only if the value is overwritten
+// If we can't find the environment variable with the name as submitted, then we tyry again
+// with the name of the variable in ALL-CAPS.
+// there is probably a very elegant way to handle the pointer case with a recursive call
+// but I didn't feel like figuring it out after getting this here to work 8^)
 func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 	// zero value
 	// var z reflect.Value
@@ -462,32 +476,54 @@ func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 
 	switch fieldType.Kind() {
 	case reflect.Ptr:
+		// this field is a pointer
+		// if it is a pointer to a simple scalar type, we can check the environment for override variables
 		pointedToType := fieldType.Elem().Kind()
 
 		switch pointedToType {
 		case reflect.Bool:
 			if envVal := getEnvironmentBool(envVarName); envVal != nil {
-				fieldValue.Elem().SetBool(*envVal)
+				if fieldValue.Elem().IsValid() {
+					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+					fieldValue.Elem().SetBool(*envVal)
+					return true
+				}
+				// the pointer in the base struct IS NIL, so we can't address its target
+				fieldValue.Set(reflect.ValueOf(envVal))
 				return true
-				//return reflect.ValueOf(envVal)
 			}
 		case reflect.Int:
 			if envVal := getEnvironmentInt(envVarName); envVal != nil {
-				fieldValue.Elem().SetInt(int64(*envVal))
+				if fieldValue.Elem().IsValid() {
+					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+					fieldValue.Elem().SetInt(int64(*envVal))
+					return true
+				}
+				// the pointer in the base struct IS NIL, so we can't address its target
+				fieldValue.Set(reflect.ValueOf(envVal))
 				return true
-				//return reflect.ValueOf(envVal)
 			}
 		case reflect.Float64:
 			if envVal := getEnvironmentFloat64(envVarName); envVal != nil {
-				fieldValue.Elem().SetFloat(*envVal)
+				if fieldValue.Elem().IsValid() {
+					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+					fieldValue.Elem().SetFloat(*envVal)
+					return true
+				}
+				// the pointer in the base struct IS NIL, so we can't address its target
+				fieldValue.Set(reflect.ValueOf(envVal))
 				return true
-				//return reflect.ValueOf(envVal)
 			}
 		case reflect.String:
 			if envVal := getEnvironmentString(envVarName); envVal != nil {
-				fieldValue.Elem().SetString(*envVal)
+				if fieldValue.Elem().IsValid() {
+					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+					fieldValue.Elem().SetString(*envVal)
+					return true
+				}
+				// the pointer in the base struct IS NIL, so we can't address its target
+				fieldValue.Set(reflect.ValueOf(envVal))
 				return true
-				//return reflect.ValueOf(envVal)
 			}
 		default:
 			// not a type we can work with
@@ -525,6 +561,11 @@ func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 		// TODO: log an error
 		return false
 	} // END field kind switch
+
+	capECName := strings.ToUpper(envVarName)
+	if capECName != envVarName {
+		return valueFromEnvironment(fieldValue, capECName)
+	}
 	return false
 }
 
