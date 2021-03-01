@@ -5,10 +5,8 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	cfg "github.com/elephant-insurance/configuration"
 	dig "github.com/elephant-insurance/diagnostics/v2"
 	log "github.com/elephant-insurance/logging/v2"
-	msgdcfg "github.com/elephant-insurance/ms-geo-data/config"
 )
 
 type testTagCfg struct {
@@ -49,15 +47,35 @@ func TestFinalTag(t *testing.T) {
 }
 
 func TestMergeConfig(t *testing.T) {
-	rc := cfg.RequiredConfig{Environment: "test"}
-	rc2 := cfg.RequiredConfig{LogLevel: "info"}
+	rc := RequiredConfig{Environment: "test"}
+	rc2 := RequiredConfig{LogLevel: "info"}
 	ds := (&dig.Settings{}).ForTesting()
 	ls := (&log.Settings{}).ForTesting()
-	basecfg := msgdcfg.MSGDConfig{rc, *ds, *ls}
-	ovrcfg := msgdcfg.MSGDConfig{rc2, *ds, *ls}
+	basecfg := MSGDConfig{rc, *ds, *ls}
+	ovrcfg := MSGDConfig{rc2, *ds, *ls}
 
 	err := Merge(&basecfg, &ovrcfg, WithOverride)
 	if err != nil {
 		t.Fatal(`error running Merge: ` + err.Error())
 	}
+}
+
+// This is just a local replica of configuration.RequiredConfig for testing
+type RequiredConfig struct {
+	OverrideConfigPath string `config:"final,optional" yaml:"OverrideConfigPath"`
+	Environment        string `yaml:"Environment"`
+	LogLevel           string `yaml:"LogLevel"`
+	Version            string `yaml:"Version"`
+	Branch             string `yaml:"Branch"`
+	Commit             string `yaml:"Commit"`
+	ImageTag           string `yaml:"ImageTag"`
+	Build              string `yaml:"Build"`
+	DateBuilt          string `yaml:"DateBuilt"`
+}
+
+// local replica of geo-data config
+type MSGDConfig struct {
+	RequiredConfig `yaml:"RequiredConfig"`
+	Diagnostics    dig.Settings `yaml:"Diagnostics"`
+	Logging        log.Settings `yaml:"Logging"`
 }
