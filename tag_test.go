@@ -5,8 +5,8 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	dig "github.com/elephant-insurance/diagnostics/v2"
-	log "github.com/elephant-insurance/logging/v2"
+	"github.com/elephant-insurance/go-microservice-arch/v2/dig"
+	"github.com/elephant-insurance/go-microservice-arch/v2/log"
 )
 
 type testTagCfg struct {
