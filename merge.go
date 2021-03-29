@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 const DefaultEnvironmentSettingPrefix string = `MSVC_`
@@ -483,9 +485,10 @@ func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 	case reflect.Ptr:
 		// this field is a pointer
 		// if it is a pointer to a simple scalar type, we can check the environment for override variables
-		pointedToType := fieldType.Elem().Kind()
+		pointedToType := fieldType.Elem()
+		pointedToKind := fieldType.Elem().Kind()
 
-		switch pointedToType {
+		switch pointedToKind {
 		case reflect.Bool:
 			if envVal := getEnvironmentBool(envVarName); envVal != nil {
 				if fieldValue.Elem().IsValid() {
@@ -521,14 +524,32 @@ func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 			}
 		case reflect.String:
 			if envVal := getEnvironmentString(envVarName); envVal != nil {
-				if fieldValue.Elem().IsValid() {
-					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
-					fieldValue.Elem().SetString(*envVal)
+				if pointedToType == reflect.TypeOf(`foo`) {
+					// this is a regular string, so easy:
+					if fieldValue.Elem().IsValid() {
+						// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+						fieldValue.Elem().SetString(*envVal)
+						return true
+					}
+					// the pointer in the base struct IS NIL, so we can't address its target
+					fieldValue.Set(reflect.ValueOf(envVal))
 					return true
+				} else {
+					envVal := reflect.ValueOf(*envVal)
+					castedVal := envVal.Convert(pointedToType)
+					if fieldValue.Elem().IsValid() {
+						// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+						fieldValue.Elem().Set(castedVal)
+						return true
+					}
+					/*
+						fieldValue.Set(reflect.New(pointedToType.Addr()))
+						// the pointer in the base struct IS NIL, so we can't address its target
+						fieldValue.Set(castedVal)
+						return true*/
+					spew.Dump(`Value for ` + envVarName + ` is not valid`)
 				}
-				// the pointer in the base struct IS NIL, so we can't address its target
-				fieldValue.Set(reflect.ValueOf(envVal))
-				return true
+
 			}
 		default:
 			// not a type we can work with
