@@ -14,8 +14,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 const DefaultEnvironmentSettingPrefix string = `MSVC_`
@@ -537,17 +535,14 @@ func valueFromEnvironment(fieldValue reflect.Value, envVarName string) bool {
 				} else {
 					envVal := reflect.ValueOf(*envVal)
 					castedVal := envVal.Convert(pointedToType)
-					if fieldValue.Elem().IsValid() {
-						// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
-						fieldValue.Elem().Set(castedVal)
-						return true
+					if !fieldValue.Elem().IsValid() {
+						// the pointer in the base struct IS NIL, so we have to set it
+						empty := reflect.New(pointedToType)
+						fieldValue = empty
 					}
-					/*
-						fieldValue.Set(reflect.New(pointedToType.Addr()))
-						// the pointer in the base struct IS NIL, so we can't address its target
-						fieldValue.Set(castedVal)
-						return true*/
-					spew.Dump(`Value for ` + envVarName + ` is not valid`)
+					// the pointer in the base struct IS NOT NIL, so we can overwrite its target directly
+					fieldValue.Elem().Set(castedVal)
+					return true
 				}
 
 			}
