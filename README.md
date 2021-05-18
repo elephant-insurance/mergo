@@ -40,7 +40,7 @@ It is ready for production use. [It is used in several projects by Docker, Googl
 
 ### Important note
 
-Please keep in mind that a problematic PR broke [0.3.9](//github.com/imdario/mergo/releases/tag/0.3.9). I reverted it in [0.3.10](//github.com/imdario/mergo/releases/tag/0.3.10), and I consider it stable but not bug-free. Also, this version adds suppot for go modules.
+Please keep in mind that a problematic PR broke [0.3.9](//github.com/imdario/mergo/releases/tag/0.3.9). I reverted it in [0.3.10](//github.com/imdario/mergo/releases/tag/0.3.10), and I consider it stable but not bug-free. Also, this version adds support for go modules.
 
 Keep in mind that in [0.3.2](//github.com/imdario/mergo/releases/tag/0.3.2), Mergo changed `Merge()`and `Map()` signatures to support [transformers](#transformers). I added an optional/variadic argument so that it won't break the existing code.
 
@@ -97,7 +97,7 @@ If Mergo is useful to you, consider buying me a coffee, a beer, or making a mont
 - [mantasmatelis/whooplist-server](https://github.com/mantasmatelis/whooplist-server)
 - [jnuthong/item_search](https://github.com/jnuthong/item_search)
 - [bukalapak/snowboard](https://github.com/bukalapak/snowboard)
-- [janoszen/containerssh](https://github.com/janoszen/containerssh)
+- [containerssh/containerssh](https://github.com/containerssh/containerssh)
 
 ## Install
 
